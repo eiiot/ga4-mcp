@@ -57,6 +57,7 @@ def test_credentials_are_selected_from_authenticated_grant(tmp_path):
     assert credentials[0].token == "google-access-a"
     assert credentials[0].refresh_token == "google-refresh-a"
     assert credentials[0].expiry is not None
+    assert credentials[0].expiry.tzinfo is None
     assert credentials[1].token == "google-access-b"
     assert credentials[1].refresh_token == "google-refresh-b"
 

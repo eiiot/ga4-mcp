@@ -351,9 +351,10 @@ class GoogleOAuthProvider(
             client_secret=self.settings.google_client_secret,
             scopes=[ANALYTICS_SCOPE],
         )
+        # google-auth compares expiry with a naive UTC datetime.
         credentials.expiry = datetime.fromtimestamp(
             grant["expires_at"], timezone.utc
-        )
+        ).replace(tzinfo=None)
         return credentials
 
 
