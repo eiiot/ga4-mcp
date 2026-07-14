@@ -57,15 +57,44 @@ No Google access or refresh token is returned to Tuft or shared between users.
 
 ## MVP milestones
 
-1. Add Streamable HTTP transport and health/readiness endpoints without
-   changing the upstream stdio entry point.
-2. Add MCP OAuth endpoints and Google OAuth callback handling.
-3. Introduce a request-scoped credential provider and update Analytics client
-   construction to use it.
-4. Add persistent encrypted grant storage and disconnect/revocation support.
-5. Add integration tests with two simultaneous users to prove credential
-   isolation.
-6. Deploy a staging service and connect it to the GA4 entry in Tuft.
+The fork now includes the first single-machine implementation: Streamable HTTP,
+MCP dynamic client registration and OAuth endpoints, Google OAuth, encrypted
+SQLite grant storage, token refresh/revocation, and request-scoped credentials.
+The existing stdio entry point is unchanged.
+
+Before production use:
+
+1. Replace SQLite with Postgres (or otherwise enforce a single application
+   process and keep the SQLite database on a persistent volume).
+2. Persist refreshed Google access tokens to avoid refreshing once per request
+   after their original expiry.
+3. Add end-to-end tests against a Google OAuth test project.
+4. Deploy a staging service and connect it to the GA4 entry in Tuft.
+
+## Running hosted mode
+
+Create a Google web OAuth client with this exact redirect URI:
+
+```text
+https://YOUR_HOST/oauth/google/callback
+```
+
+Generate the encryption key once with
+`python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'`.
+Then run the container with:
+
+```shell
+docker build -t ga4-mcp .
+docker run --rm -p 8000:8000 -v ga4-mcp-data:/data \
+  -e GA4_MCP_SERVER_URL=https://YOUR_HOST \
+  -e GOOGLE_OAUTH_CLIENT_ID=... \
+  -e GOOGLE_OAUTH_CLIENT_SECRET=... \
+  -e GA4_MCP_ENCRYPTION_KEY=... \
+  -e GA4_MCP_DATABASE_PATH=/data/analytics-mcp.db \
+  ga4-mcp
+```
+
+The MCP URL is `https://YOUR_HOST/mcp`; health checks use `/health`.
 
 ## Upstream sync
 

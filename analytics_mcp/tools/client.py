@@ -21,6 +21,7 @@ from importlib import metadata
 from unittest.mock import patch
 
 import google.auth
+from google.auth.credentials import Credentials
 from google.analytics import (
     admin_v1beta,
     data_v1beta,
@@ -54,6 +55,13 @@ _READ_ONLY_ANALYTICS_SCOPE = (
 # Lock to ensure client and credential creation is thread-safe
 _client_lock = threading.Lock()
 _CREDENTIALS = None
+_credential_provider = None
+
+
+def set_credential_provider(provider):
+    """Set a request-scoped credential provider for hosted mode."""
+    global _credential_provider
+    _credential_provider = provider
 
 
 @contextlib.contextmanager
@@ -78,6 +86,11 @@ def prevent_stdio_inheritance():
 def _get_credentials():
     global _CREDENTIALS
     # Expected to be called under _client_lock
+    if _credential_provider is not None:
+        credentials = _credential_provider()
+        if not isinstance(credentials, Credentials):
+            raise RuntimeError("Hosted request has no Google credentials")
+        return credentials
     if _CREDENTIALS is None:
         with prevent_stdio_inheritance():
             _CREDENTIALS, _ = google.auth.default(
