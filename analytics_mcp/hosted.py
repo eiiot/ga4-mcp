@@ -8,7 +8,6 @@ import secrets
 import sqlite3
 import threading
 import time
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import escape
@@ -440,13 +439,6 @@ def create_server(settings: HostedSettings) -> FastMCP:
     )
     provider = GoogleOAuthProvider(settings, store)
 
-    @asynccontextmanager
-    async def lifespan(_server):
-        try:
-            yield
-        finally:
-            store.close()
-
     server = FastMCP(
         name="Google Analytics MCP Server",
         auth_server_provider=provider,
@@ -466,7 +458,6 @@ def create_server(settings: HostedSettings) -> FastMCP:
         streamable_http_path="/mcp",
         json_response=True,
         stateless_http=True,
-        lifespan=lifespan,
     )
     set_credential_provider(provider.credentials_for_current_request)
 
@@ -534,6 +525,29 @@ def create_server(settings: HostedSettings) -> FastMCP:
   <p class="contact">Contact Eliot (<a href="mailto:eliot@expo.dev">eliot@expo.dev</a>) with any questions.</p>
   <a class="button" href="{escape(continue_url, quote=True)}">Continue to Google</a>
 </main></body></html>""")
+
+    def protected_resource_metadata() -> JSONResponse:
+        server_url = settings.server_url.rstrip("/")
+        return JSONResponse(
+            {
+                "resource": f"{server_url}/mcp",
+                "authorization_servers": [server_url],
+                "scopes_supported": [MCP_SCOPE],
+                "bearer_methods_supported": ["header"],
+            }
+        )
+
+    @server.custom_route(
+        "/.well-known/oauth-protected-resource", methods=["GET"]
+    )
+    async def root_protected_resource_metadata(_request: Request):
+        return protected_resource_metadata()
+
+    @server.custom_route(
+        "/.well-known/oauth-protected-resource/mcp", methods=["GET"]
+    )
+    async def mcp_protected_resource_metadata(_request: Request):
+        return protected_resource_metadata()
 
     @server.custom_route("/health", methods=["GET"])
     async def health(_request: Request):
