@@ -435,7 +435,7 @@ def create_server(settings: HostedSettings) -> FastMCP:
     ol {{ display: grid; gap: 13px; margin: 0; padding: 0; list-style: none; counter-reset: steps; }}
     li {{ position: relative; min-height: 22px; padding: 1px 0 0 32px; color: #303037; line-height: 20px; counter-increment: steps; }}
     li::before {{ content: counter(steps); position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: #f0f0f3; color: #777780; font-size: 11px; font-weight: 650; }}
-    .contact {{ margin: 15px 0 0 32px; color: #4f4f58; line-height: 20px; }}
+    .contact {{ margin: 15px 0 0; color: #4f4f58; line-height: 20px; text-align: left; }}
     .contact a {{ color: inherit; text-underline-offset: 2px; }}
     .button {{ display: block; margin-top: 18px; padding: 10px 16px; border-radius: 8px; background: #29292e; color: white; text-align: center; text-decoration: none; font-weight: 600; line-height: 20px; transition: background .15s ease, transform .15s ease; }}
     .button:hover {{ background: #111114; }}
