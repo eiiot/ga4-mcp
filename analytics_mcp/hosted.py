@@ -422,24 +422,36 @@ def create_server(settings: HostedSettings) -> FastMCP:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Connect Google Analytics</title>
   <style>
-    :root {{ color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }}
-    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f5f4; color: #18181b; }}
-    main {{ width: min(440px, calc(100% - 48px)); padding: 32px; border: 1px solid #e4e4e7; border-radius: 16px; background: white; box-shadow: 0 12px 40px #00000012; }}
-    .badge {{ display: inline-block; padding: 4px 9px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 650; }}
-    h1 {{ margin: 18px 0 8px; font-size: 24px; }}
-    p {{ color: #52525b; line-height: 1.55; }}
-    ol {{ padding-left: 22px; color: #3f3f46; line-height: 1.6; }}
-    a {{ display: block; margin-top: 24px; padding: 11px 16px; border-radius: 9px; background: #18181b; color: white; text-align: center; text-decoration: none; font-weight: 650; }}
-    @media (prefers-color-scheme: dark) {{ body {{ background: #09090b; color: #fafafa; }} main {{ background: #18181b; border-color: #3f3f46; }} p, ol {{ color: #d4d4d8; }} a {{ background: #fafafa; color: #18181b; }} }}
+    :root {{ color-scheme: light; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f9f9fb; color: #242429; font-size: 14px; }}
+    main {{ width: min(420px, 100%); padding: 18px; border: 1px solid #d9d9df; border-radius: 16px; background: #fff; box-shadow: 0 16px 38px rgba(26, 26, 32, .08); }}
+    header {{ display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }}
+    .mark {{ width: 38px; height: 38px; object-fit: contain; }}
+    h1 {{ margin: 0; font-size: 19px; line-height: 24px; font-weight: 650; letter-spacing: -.015em; }}
+    .subtitle {{ margin: 1px 0 0; color: #6b6b75; line-height: 20px; }}
+    .badge {{ margin-left: 5px; padding: 2px 6px; border-radius: 999px; background: #f0eff2; color: #67666f; font-size: 10px; font-weight: 650; vertical-align: 2px; text-transform: uppercase; letter-spacing: .04em; }}
+    ol {{ display: grid; gap: 13px; margin: 0; padding: 0; list-style: none; counter-reset: steps; }}
+    li {{ position: relative; min-height: 22px; padding: 1px 0 0 32px; color: #303037; line-height: 20px; counter-increment: steps; }}
+    li::before {{ content: counter(steps); position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: #f0f0f3; color: #777780; font-size: 11px; font-weight: 650; }}
+    .note {{ margin: 16px 0 0; color: #777780; font-size: 12px; line-height: 17px; }}
+    .button {{ display: block; margin-top: 18px; padding: 10px 16px; border-radius: 8px; background: #29292e; color: white; text-align: center; text-decoration: none; font-weight: 600; line-height: 20px; transition: background .15s ease, transform .15s ease; }}
+    .button:hover {{ background: #111114; }}
+    .button:active {{ transform: translateY(1px); }}
   </style>
 </head>
 <body><main>
-  <span class="badge">Alpha</span>
-  <h1>Connect Google Analytics</h1>
-  <p>Google is still reviewing Tuft's Analytics integration. You can connect now, but Google will show an “unverified app” warning.</p>
-  <ol><li>Select <strong>Advanced</strong> on Google's warning.</li><li>Select <strong>Go to Tuft (unsafe)</strong> to continue.</li></ol>
-  <p>Tuft requests read-only access to your Google Analytics accounts and properties.</p>
-  <a href="{escape(continue_url, quote=True)}">Continue to Google</a>
+  <header>
+    <img class="mark" src="https://custom-mcp-preview.staging.tuft.host/images/tuft-mark-red.png" alt="Tuft">
+    <div><h1>Connect Google Analytics <span class="badge">Alpha</span></h1><p class="subtitle">Sign in with Google to connect your account.</p></div>
+  </header>
+  <ol>
+    <li>Continue to Google.</li>
+    <li>On the “Google hasn't verified this app” screen, select <strong>Advanced</strong>.</li>
+    <li>Select <strong>Go to Tuft (unsafe)</strong> to finish connecting.</li>
+  </ol>
+  <p class="note">Tuft only requests read-only access to your Google Analytics accounts and properties. Google is reviewing this integration.</p>
+  <a class="button" href="{escape(continue_url, quote=True)}">Continue to Google</a>
 </main></body></html>""")
 
     @server.custom_route("/health", methods=["GET"])
