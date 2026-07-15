@@ -8,7 +8,6 @@ import secrets
 import sqlite3
 import threading
 import time
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import escape
@@ -440,13 +439,6 @@ def create_server(settings: HostedSettings) -> FastMCP:
     )
     provider = GoogleOAuthProvider(settings, store)
 
-    @asynccontextmanager
-    async def lifespan(_server):
-        try:
-            yield
-        finally:
-            store.close()
-
     server = FastMCP(
         name="Google Analytics MCP Server",
         auth_server_provider=provider,
@@ -466,7 +458,6 @@ def create_server(settings: HostedSettings) -> FastMCP:
         streamable_http_path="/mcp",
         json_response=True,
         stateless_http=True,
-        lifespan=lifespan,
     )
     set_credential_provider(provider.credentials_for_current_request)
 
