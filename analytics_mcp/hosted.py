@@ -435,6 +435,8 @@ def create_server(settings: HostedSettings) -> FastMCP:
     ol {{ display: grid; gap: 13px; margin: 0; padding: 0; list-style: none; counter-reset: steps; }}
     li {{ position: relative; min-height: 22px; padding: 1px 0 0 32px; color: #303037; line-height: 20px; counter-increment: steps; }}
     li::before {{ content: counter(steps); position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: #f0f0f3; color: #777780; font-size: 11px; font-weight: 650; }}
+    .contact {{ margin: 15px 0 0 32px; color: #4f4f58; line-height: 20px; }}
+    .contact a {{ color: inherit; text-underline-offset: 2px; }}
     .button {{ display: block; margin-top: 18px; padding: 10px 16px; border-radius: 8px; background: #29292e; color: white; text-align: center; text-decoration: none; font-weight: 600; line-height: 20px; transition: background .15s ease, transform .15s ease; }}
     .button:hover {{ background: #111114; }}
     .button:active {{ transform: translateY(1px); }}
@@ -445,12 +447,13 @@ def create_server(settings: HostedSettings) -> FastMCP:
     <img class="mark" src="https://custom-mcp-preview.staging.tuft.host/images/tuft-mark.png" alt="Tuft">
     <h1>Connect Google Analytics <span class="badge">Alpha</span></h1>
   </header>
-  <p class="explanation">Google is currently reviewing Tuft's Google Analytics integration. While we are in the approval process, using this feature requires a few extra steps. While Google displays a warning during this period, it has no impact on the security of Tuft's analytics or the way we safeguard your credentials. You are welcome to reach out to Eliot (<a href="mailto:eliot@expo.dev">eliot@expo.dev</a>) if you have any questions.</p>
+  <p class="explanation">Google is currently reviewing Tuft's Google Analytics integration. While we are in the approval process, using this feature requires a few extra steps. While Google displays a warning during this period, <strong>it has no impact on how we safeguard your credentials.</strong></p>
   <ol>
     <li>Continue to Google.</li>
     <li>On the “Google hasn't verified this app” screen, select <strong>Advanced</strong>.</li>
     <li>Select <strong>Go to Tuft (unsafe)</strong> to finish connecting.</li>
   </ol>
+  <p class="contact">Contact Eliot (<a href="mailto:eliot@expo.dev">eliot@expo.dev</a>) with any questions.</p>
   <a class="button" href="{escape(continue_url, quote=True)}">Continue to Google</a>
 </main></body></html>""")
 
