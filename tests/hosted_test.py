@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.auth.provider import AccessToken
+from starlette.testclient import TestClient
 
 from analytics_mcp.hosted import (
     GoogleOAuthProvider,
@@ -117,6 +118,30 @@ class HostedServerTest(unittest.TestCase):
         server = create_server(settings)
 
         self.assertIsNone(server.settings.lifespan)
+
+    def test_server_advertises_protected_resource_metadata(self):
+        settings = HostedSettings(
+            server_url="https://ga4.example.com",
+            google_client_id="client-id",
+            google_client_secret="client-secret",
+            encryption_key=Fernet.generate_key().decode(),
+            database_path=str(Path(self.temporary_directory.name) / "metadata.db"),
+        )
+        server = create_server(settings)
+
+        with TestClient(server.streamable_http_app()) as client:
+            response = client.get("/.well-known/oauth-protected-resource")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "resource": "https://ga4.example.com/mcp",
+                "authorization_servers": ["https://ga4.example.com"],
+                "scopes_supported": ["analytics.read"],
+                "bearer_methods_supported": ["header"],
+            },
+        )
 
 
 if __name__ == "__main__":
