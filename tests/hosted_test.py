@@ -125,7 +125,9 @@ class HostedServerTest(unittest.TestCase):
             google_client_id="client-id",
             google_client_secret="client-secret",
             encryption_key=Fernet.generate_key().decode(),
-            database_path=str(Path(self.temporary_directory.name) / "metadata.db"),
+            database_path=str(
+                Path(self.temporary_directory.name) / "metadata.db"
+            ),
         )
         server = create_server(settings)
 
