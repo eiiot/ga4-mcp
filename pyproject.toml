@@ -15,6 +15,7 @@ dependencies = [
     "google-adk>=1.29.0",
     "httpx>=0.28.1",
     "cryptography>=41.0.5",
+    "psycopg[binary,pool]>=3.2,<4",
 ]
 keywords = ["google analytics", "analytics", "mcp", "ga4"]
 classifiers = [

@@ -27,6 +27,7 @@ class HostedServerTest(unittest.TestCase):
         self.provider = GoogleOAuthProvider(settings, self.store)
 
     def tearDown(self):
+        self.store.close()
         self.temporary_directory.cleanup()
 
     def test_credentials_are_selected_from_authenticated_grant(self):

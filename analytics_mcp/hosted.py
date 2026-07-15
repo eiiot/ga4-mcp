@@ -8,6 +8,7 @@ import secrets
 import sqlite3
 import threading
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import escape
@@ -33,6 +34,8 @@ from mcp.server.auth.settings import (
 from mcp.server.fastmcp import FastMCP
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyHttpUrl
+from psycopg_pool import ConnectionPool
+from psycopg.types.json import Jsonb
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -62,6 +65,7 @@ class HostedSettings:
     google_client_id: str
     google_client_secret: str
     encryption_key: str
+    database_url: str | None = None
     database_path: str = "analytics-mcp.db"
     host: str = "0.0.0.0"
     port: int = 8000
@@ -89,6 +93,7 @@ class HostedSettings:
         values["database_path"] = os.environ.get(
             "GA4_MCP_DATABASE_PATH", "analytics-mcp.db"
         )
+        values["database_url"] = os.environ.get("DATABASE_URL")
         values["host"] = os.environ.get("HOST", "0.0.0.0")
         values["port"] = int(os.environ.get("PORT", "8000"))
         return cls(**values)
@@ -135,6 +140,65 @@ class GrantStore:
 
     def decrypt(self, value: str) -> str:
         return self._cipher.decrypt(value.encode()).decode()
+
+    def ping(self) -> None:
+        with self._lock:
+            self._connection.execute("SELECT 1").fetchone()
+
+    def close(self) -> None:
+        with self._lock:
+            self._connection.close()
+
+
+class PostgresGrantStore:
+    """Shared grant store for horizontally scaled hosted servers."""
+
+    def __init__(self, database_url: str, encryption_key: str):
+        self._pool = ConnectionPool(database_url, min_size=1, max_size=5)
+        self._cipher = Fernet(encryption_key.encode())
+        with self._pool.connection() as connection:
+            connection.execute("""CREATE TABLE IF NOT EXISTS records (
+                    kind TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value JSONB NOT NULL,
+                    PRIMARY KEY (kind, key)
+                )""")
+
+    def put(self, kind: str, key: str, value: dict) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                """INSERT INTO records(kind, key, value) VALUES (%s, %s, %s)
+                ON CONFLICT (kind, key) DO UPDATE SET value = EXCLUDED.value""",
+                (kind, key, Jsonb(value)),
+            )
+
+    def get(self, kind: str, key: str) -> dict | None:
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT value FROM records WHERE kind = %s AND key = %s",
+                (kind, key),
+            ).fetchone()
+        return row[0] if row else None
+
+    def delete(self, kind: str, key: str) -> None:
+        with self._pool.connection() as connection:
+            connection.execute(
+                "DELETE FROM records WHERE kind = %s AND key = %s",
+                (kind, key),
+            )
+
+    def encrypt(self, value: str) -> str:
+        return self._cipher.encrypt(value.encode()).decode()
+
+    def decrypt(self, value: str) -> str:
+        return self._cipher.decrypt(value.encode()).decode()
+
+    def ping(self) -> None:
+        with self._pool.connection() as connection:
+            connection.execute("SELECT 1").fetchone()
+
+    def close(self) -> None:
+        self._pool.close()
 
 
 class GoogleOAuthProvider(
@@ -369,8 +433,20 @@ class GoogleOAuthProvider(
 
 
 def create_server(settings: HostedSettings) -> FastMCP:
-    store = GrantStore(settings.database_path, settings.encryption_key)
+    store = (
+        PostgresGrantStore(settings.database_url, settings.encryption_key)
+        if settings.database_url
+        else GrantStore(settings.database_path, settings.encryption_key)
+    )
     provider = GoogleOAuthProvider(settings, store)
+
+    @asynccontextmanager
+    async def lifespan(_server):
+        try:
+            yield
+        finally:
+            store.close()
+
     server = FastMCP(
         name="Google Analytics MCP Server",
         auth_server_provider=provider,
@@ -389,6 +465,8 @@ def create_server(settings: HostedSettings) -> FastMCP:
         port=settings.port,
         streamable_http_path="/mcp",
         json_response=True,
+        stateless_http=True,
+        lifespan=lifespan,
     )
     set_credential_provider(provider.credentials_for_current_request)
 
@@ -459,6 +537,7 @@ def create_server(settings: HostedSettings) -> FastMCP:
 
     @server.custom_route("/health", methods=["GET"])
     async def health(_request: Request):
+        store.ping()
         return JSONResponse({"status": "ok"})
 
     return server

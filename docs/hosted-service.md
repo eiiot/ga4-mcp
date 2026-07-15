@@ -57,19 +57,18 @@ No Google access or refresh token is returned to Tuft or shared between users.
 
 ## MVP milestones
 
-The fork now includes the first single-machine implementation: Streamable HTTP,
-MCP dynamic client registration and OAuth endpoints, Google OAuth, encrypted
-SQLite grant storage, token refresh/revocation, and request-scoped credentials.
-The existing stdio entry point is unchanged.
+The fork includes Streamable HTTP, MCP dynamic client registration and OAuth
+endpoints, Google OAuth, encrypted grant storage, token refresh/revocation, and
+request-scoped credentials. Hosted deployments use Postgres through
+`DATABASE_URL`; SQLite remains available for local single-machine testing. The
+existing stdio entry point is unchanged.
 
 Before production use:
 
-1. Replace SQLite with Postgres (or otherwise enforce a single application
-   process and keep the SQLite database on a persistent volume).
-2. Persist refreshed Google access tokens to avoid refreshing once per request
+1. Persist refreshed Google access tokens to avoid refreshing once per request
    after their original expiry.
-3. Add end-to-end tests against a Google OAuth test project.
-4. Deploy a staging service and connect it to the GA4 entry in Tuft.
+2. Add end-to-end tests against a Google OAuth test project.
+3. Deploy a staging service and connect it to the GA4 entry in Tuft.
 
 ## Running hosted mode
 
@@ -95,6 +94,9 @@ docker run --rm -p 8000:8000 -v ga4-mcp-data:/data \
 ```
 
 The MCP URL is `https://YOUR_HOST/mcp`; health checks use `/health`.
+
+For a production-shaped Fly deployment backed by Managed Postgres, see
+[Deploy to Fly.io](fly.md).
 
 ## Upstream sync
 
