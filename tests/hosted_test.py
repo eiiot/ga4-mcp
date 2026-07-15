@@ -67,3 +67,15 @@ def test_grant_tokens_are_encrypted_at_rest(tmp_path):
     encrypted = store.encrypt("super-secret-refresh-token")
     assert "super-secret-refresh-token" not in encrypted
     assert store.decrypt(encrypted) == "super-secret-refresh-token"
+
+
+def test_google_authorization_url_uses_saved_transaction(tmp_path):
+    provider, store = make_provider(tmp_path)
+    store.put("state", "oauth-state", {"expires_at": time.time() + 60})
+
+    url = provider.google_authorization_url("oauth-state")
+
+    assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
+    assert "client_id=client-id" in url
+    assert "state=oauth-state" in url
+    assert "analytics.readonly" in url

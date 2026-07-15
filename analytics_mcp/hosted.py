@@ -10,6 +10,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from html import escape
 from urllib.parse import urlencode
 
 import httpx
@@ -34,7 +35,7 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyHttpUrl
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from analytics_mcp.tools.admin.info import (
     get_account_summaries,
@@ -179,6 +180,15 @@ class GoogleOAuthProvider(
                 "expires_at": time.time() + 600,
             },
         )
+        return (
+            f"{self.settings.server_url.rstrip('/')}/oauth/google/start?"
+            + urlencode({"state": provider_state})
+        )
+
+    def google_authorization_url(self, state: str) -> str:
+        transaction = self.store.get("state", state)
+        if not transaction or transaction["expires_at"] < time.time():
+            raise HTTPException(400, "Invalid or expired OAuth request")
         query = urlencode(
             {
                 "client_id": self.settings.google_client_id,
@@ -187,7 +197,7 @@ class GoogleOAuthProvider(
                 "scope": ANALYTICS_SCOPE,
                 "access_type": "offline",
                 "prompt": "consent",
-                "state": provider_state,
+                "state": state,
             }
         )
         return f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
@@ -398,6 +408,39 @@ def create_server(settings: HostedSettings) -> FastMCP:
     @server.custom_route("/oauth/google/callback", methods=["GET"])
     async def google_callback(request: Request):
         return await provider.handle_google_callback(request)
+
+    @server.custom_route("/oauth/google/start", methods=["GET"])
+    async def google_start(request: Request):
+        state = request.query_params.get("state")
+        if not state:
+            raise HTTPException(400, "Missing OAuth state")
+        continue_url = provider.google_authorization_url(state)
+        return HTMLResponse(f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connect Google Analytics</title>
+  <style>
+    :root {{ color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }}
+    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f5f4; color: #18181b; }}
+    main {{ width: min(440px, calc(100% - 48px)); padding: 32px; border: 1px solid #e4e4e7; border-radius: 16px; background: white; box-shadow: 0 12px 40px #00000012; }}
+    .badge {{ display: inline-block; padding: 4px 9px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 650; }}
+    h1 {{ margin: 18px 0 8px; font-size: 24px; }}
+    p {{ color: #52525b; line-height: 1.55; }}
+    ol {{ padding-left: 22px; color: #3f3f46; line-height: 1.6; }}
+    a {{ display: block; margin-top: 24px; padding: 11px 16px; border-radius: 9px; background: #18181b; color: white; text-align: center; text-decoration: none; font-weight: 650; }}
+    @media (prefers-color-scheme: dark) {{ body {{ background: #09090b; color: #fafafa; }} main {{ background: #18181b; border-color: #3f3f46; }} p, ol {{ color: #d4d4d8; }} a {{ background: #fafafa; color: #18181b; }} }}
+  </style>
+</head>
+<body><main>
+  <span class="badge">Alpha</span>
+  <h1>Connect Google Analytics</h1>
+  <p>Google is still reviewing Tuft's Analytics integration. You can connect now, but Google will show an “unverified app” warning.</p>
+  <ol><li>Select <strong>Advanced</strong> on Google's warning.</li><li>Select <strong>Go to Tuft (unsafe)</strong> to continue.</li></ol>
+  <p>Tuft requests read-only access to your Google Analytics accounts and properties.</p>
+  <a href="{escape(continue_url, quote=True)}">Continue to Google</a>
+</main></body></html>""")
 
     @server.custom_route("/health", methods=["GET"])
     async def health(_request: Request):
