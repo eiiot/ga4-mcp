@@ -1,13 +1,17 @@
 # Deploy to Fly.io
 
 The hosted server runs as one stateless Fly app backed by Fly Managed
-Postgres. Managed Postgres is preferred over the legacy unmanaged Fly Postgres
-app: Fly handles backups, updates, and database operations, while the MCP app
-only needs the `DATABASE_URL` added by `fly mpg attach`.
+Postgres. The app is created on a dedicated custom 6PN named
+`ga4-mcp-network`, rather than sharing the organization's default private
+network with unrelated Fly apps. Managed Postgres is preferred over the legacy
+unmanaged Fly Postgres app: Fly handles backups, updates, and database
+operations, while the MCP app only needs the `DATABASE_URL` added by
+`fly mpg attach`.
 
 The checked-in configuration uses:
 
 - app: `tuft-ga4-mcp`
+- private network: `ga4-mcp-network`
 - region: `sjc`
 - public URL: `https://ga4.mcp.tuft.dev`
 - Google callback: `https://ga4.mcp.tuft.dev/oauth/google/callback`
@@ -21,9 +25,12 @@ From the repository root:
 
 ```shell
 fly auth login
-fly apps create tuft-ga4-mcp
+fly apps create tuft-ga4-mcp --network ga4-mcp-network
 fly mpg create --name tuft-ga4-mcp-db --region sjc --plan Starter
 ```
+
+The network is selected when the app is created and cannot be changed later.
+Do not omit `--network` or create the app manually in the dashboard first.
 
 The last command prints the managed Postgres cluster ID. Attach it to the app:
 
@@ -33,6 +40,13 @@ fly mpg attach YOUR_CLUSTER_ID -a tuft-ga4-mcp
 
 This creates a `DATABASE_URL` secret. Do not create a Fly volume for the MCP
 app; all durable state belongs in Postgres.
+
+The custom 6PN prevents the app from directly reaching sibling apps on the
+organization's default 6PN, and those apps cannot route directly to this app's
+private addresses. Managed Postgres is not exposed to the public internet;
+`fly mpg attach` supplies the app-specific credentials and private pooled
+endpoint. The app itself remains publicly reachable only through the HTTPS
+service declared in `fly.toml`.
 
 Add the custom hostname to Fly:
 
