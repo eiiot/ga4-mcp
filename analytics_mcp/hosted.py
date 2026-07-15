@@ -427,14 +427,14 @@ def create_server(settings: HostedSettings) -> FastMCP:
     body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f9f9fb; color: #242429; font-size: 14px; }}
     main {{ width: min(420px, 100%); padding: 18px; border: 1px solid #d9d9df; border-radius: 16px; background: #fff; box-shadow: 0 16px 38px rgba(26, 26, 32, .08); }}
     header {{ display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }}
-    .mark {{ width: 38px; height: 38px; object-fit: contain; }}
+    .mark {{ width: 38px; height: 38px; padding: 6px; border: 1px solid #e3e3e8; border-radius: 10px; background: #fff; }}
     h1 {{ margin: 0; font-size: 19px; line-height: 24px; font-weight: 650; letter-spacing: -.015em; }}
-    .subtitle {{ margin: 1px 0 0; color: #6b6b75; line-height: 20px; }}
     .badge {{ margin-left: 5px; padding: 2px 6px; border-radius: 999px; background: #f0eff2; color: #67666f; font-size: 10px; font-weight: 650; vertical-align: 2px; text-transform: uppercase; letter-spacing: .04em; }}
+    .explanation {{ margin: 0 0 18px; color: #4f4f58; line-height: 20px; }}
+    .explanation a {{ color: inherit; text-underline-offset: 2px; }}
     ol {{ display: grid; gap: 13px; margin: 0; padding: 0; list-style: none; counter-reset: steps; }}
     li {{ position: relative; min-height: 22px; padding: 1px 0 0 32px; color: #303037; line-height: 20px; counter-increment: steps; }}
     li::before {{ content: counter(steps); position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: #f0f0f3; color: #777780; font-size: 11px; font-weight: 650; }}
-    .note {{ margin: 16px 0 0; color: #777780; font-size: 12px; line-height: 17px; }}
     .button {{ display: block; margin-top: 18px; padding: 10px 16px; border-radius: 8px; background: #29292e; color: white; text-align: center; text-decoration: none; font-weight: 600; line-height: 20px; transition: background .15s ease, transform .15s ease; }}
     .button:hover {{ background: #111114; }}
     .button:active {{ transform: translateY(1px); }}
@@ -442,15 +442,15 @@ def create_server(settings: HostedSettings) -> FastMCP:
 </head>
 <body><main>
   <header>
-    <img class="mark" src="https://custom-mcp-preview.staging.tuft.host/images/tuft-mark-red.png" alt="Tuft">
-    <div><h1>Connect Google Analytics <span class="badge">Alpha</span></h1><p class="subtitle">Sign in with Google to connect your account.</p></div>
+    <svg class="mark" viewBox="0 0 32 32" role="img" aria-label="Google Analytics"><path fill="#f9ab00" d="M23 4a4 4 0 0 1 4 4v16a4 4 0 1 1-8 0V8a4 4 0 0 1 4-4Z"/><path fill="#e37400" d="M13 13a4 4 0 0 1 4 4v7a4 4 0 1 1-8 0v-7a4 4 0 0 1 4-4Z"/><circle cx="3.5" cy="24.5" r="3.5" fill="#e37400"/></svg>
+    <h1>Connect Google Analytics <span class="badge">Alpha</span></h1>
   </header>
+  <p class="explanation">Google is currently reviewing Tuft's Google Analytics integration. While we are in the approval process, using this feature requires a few extra steps. While Google displays a warning during this period, it has no impact on the security of Tuft's analytics or the way we safeguard your credentials. You are welcome to reach out to Eliot (<a href="mailto:eliot@expo.dev">eliot@expo.dev</a>) if you have any questions.</p>
   <ol>
     <li>Continue to Google.</li>
     <li>On the “Google hasn't verified this app” screen, select <strong>Advanced</strong>.</li>
     <li>Select <strong>Go to Tuft (unsafe)</strong> to finish connecting.</li>
   </ol>
-  <p class="note">Tuft only requests read-only access to your Google Analytics accounts and properties. Google is reviewing this integration.</p>
   <a class="button" href="{escape(continue_url, quote=True)}">Continue to Google</a>
 </main></body></html>""")
 
