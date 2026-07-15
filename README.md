@@ -1,5 +1,13 @@
 # Google Analytics MCP Server (Experimental)
 
+> [!NOTE]
+> This fork tracks
+> [`googleanalytics/google-analytics-mcp`](https://github.com/googleanalytics/google-analytics-mcp)
+> and is being adapted into a hosted, multi-user MCP server for Tuft. The
+> upstream server remains local/stdio-only and uses Application Default
+> Credentials. See [Hosted service design](docs/hosted-service.md) for the
+> proposed remote authentication model and implementation plan.
+
 [![PyPI version](https://img.shields.io/pypi/v/analytics-mcp.svg)](https://pypi.org/project/analytics-mcp/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![GitHub branch check runs](https://img.shields.io/github/check-runs/googleanalytics/google-analytics-mcp/main)](https://github.com/googleanalytics/google-analytics-mcp/actions?query=branch%3Amain++)

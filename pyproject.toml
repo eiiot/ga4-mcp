@@ -14,6 +14,8 @@ dependencies = [
     "mcp>=1.24.0",
     "google-adk>=1.29.0",
     "httpx>=0.28.1",
+    "cryptography>=41.0.5",
+    "psycopg[binary,pool]>=3.2,<4",
 ]
 keywords = ["google analytics", "analytics", "mcp", "ga4"]
 classifiers = [
@@ -42,6 +44,7 @@ issues = "https://github.com/googleanalytics/google-analytics-mcp/issues"
 
 [project.scripts]
 analytics-mcp = "analytics_mcp.server:run_server"
+analytics-mcp-hosted = "analytics_mcp.hosted:run_server"
 # The previous name of the script. Kept for backwards compatibility.
 google-analytics-mcp = "analytics_mcp.server:run_server"
 
