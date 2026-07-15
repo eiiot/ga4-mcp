@@ -427,7 +427,7 @@ def create_server(settings: HostedSettings) -> FastMCP:
     body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f9f9fb; color: #242429; font-size: 14px; }}
     main {{ width: min(420px, 100%); padding: 18px; border: 1px solid #d9d9df; border-radius: 16px; background: #fff; box-shadow: 0 16px 38px rgba(26, 26, 32, .08); }}
     header {{ display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }}
-    .mark {{ width: 38px; height: 38px; padding: 6px; border: 1px solid #e3e3e8; border-radius: 10px; background: #fff; }}
+    .mark {{ width: 38px; height: 38px; object-fit: contain; }}
     h1 {{ margin: 0; font-size: 19px; line-height: 24px; font-weight: 650; letter-spacing: -.015em; }}
     .badge {{ margin-left: 5px; padding: 2px 6px; border-radius: 999px; background: #f0eff2; color: #67666f; font-size: 10px; font-weight: 650; vertical-align: 2px; text-transform: uppercase; letter-spacing: .04em; }}
     .explanation {{ margin: 0 0 18px; color: #4f4f58; line-height: 20px; }}
@@ -442,7 +442,7 @@ def create_server(settings: HostedSettings) -> FastMCP:
 </head>
 <body><main>
   <header>
-    <svg class="mark" viewBox="0 0 32 32" role="img" aria-label="Google Analytics"><path fill="#f9ab00" d="M23 4a4 4 0 0 1 4 4v16a4 4 0 1 1-8 0V8a4 4 0 0 1 4-4Z"/><path fill="#e37400" d="M13 13a4 4 0 0 1 4 4v7a4 4 0 1 1-8 0v-7a4 4 0 0 1 4-4Z"/><circle cx="3.5" cy="24.5" r="3.5" fill="#e37400"/></svg>
+    <img class="mark" src="https://custom-mcp-preview.staging.tuft.host/images/tuft-mark.png" alt="Tuft">
     <h1>Connect Google Analytics <span class="badge">Alpha</span></h1>
   </header>
   <p class="explanation">Google is currently reviewing Tuft's Google Analytics integration. While we are in the approval process, using this feature requires a few extra steps. While Google displays a warning during this period, it has no impact on the security of Tuft's analytics or the way we safeguard your credentials. You are welcome to reach out to Eliot (<a href="mailto:eliot@expo.dev">eliot@expo.dev</a>) if you have any questions.</p>
