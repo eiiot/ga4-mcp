@@ -9,11 +9,11 @@ The checked-in configuration uses:
 
 - app: `tuft-ga4-mcp`
 - region: `sjc`
-- public URL: `https://tuft-ga4-mcp.fly.dev`
-- Google callback: `https://tuft-ga4-mcp.fly.dev/oauth/google/callback`
+- public URL: `https://ga4.mcp.tuft.dev`
+- Google callback: `https://ga4.mcp.tuft.dev/oauth/google/callback`
 
-If the app name is unavailable, change both `app` and `GA4_MCP_SERVER_URL` in
-`fly.toml` before starting.
+If the Fly app name is unavailable, change `app` in `fly.toml`. The public URL
+remains the custom Tuft hostname.
 
 ## One-time setup
 
@@ -33,6 +33,23 @@ fly mpg attach YOUR_CLUSTER_ID -a tuft-ga4-mcp
 
 This creates a `DATABASE_URL` secret. Do not create a Fly volume for the MCP
 app; all durable state belongs in Postgres.
+
+Add the custom hostname to Fly:
+
+```shell
+fly certs add ga4.mcp.tuft.dev -a tuft-ga4-mcp
+fly certs setup ga4.mcp.tuft.dev -a tuft-ga4-mcp
+```
+
+The second command prints the exact DNS records. In the `tuft.dev` DNS zone,
+create the recommended CNAME for `ga4.mcp` (normally targeting
+`tuft-ga4-mcp.fly.dev`) and any ownership/ACME validation record Fly requests.
+Keep the CNAME DNS-only rather than proxying it through another CDN, then check
+issuance with:
+
+```shell
+fly certs check ga4.mcp.tuft.dev -a tuft-ga4-mcp
+```
 
 Add the fixed Google client ID, an encryption key, and the Google client secret
 without putting the secret in shell history:
@@ -55,21 +72,21 @@ In Google Cloud, add this exact authorized redirect URI to the OAuth web
 client:
 
 ```text
-https://tuft-ga4-mcp.fly.dev/oauth/google/callback
+https://ga4.mcp.tuft.dev/oauth/google/callback
 ```
 
 ## Deploy and verify
 
 ```shell
 fly deploy
-curl --fail https://tuft-ga4-mcp.fly.dev/health
+curl --fail https://ga4.mcp.tuft.dev/health
 fly logs -a tuft-ga4-mcp
 ```
 
 The MCP endpoint is:
 
 ```text
-https://tuft-ga4-mcp.fly.dev/mcp
+https://ga4.mcp.tuft.dev/mcp
 ```
 
 The application creates its small `records` table idempotently during startup.
