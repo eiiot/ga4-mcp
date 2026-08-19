@@ -2,9 +2,9 @@
 
 ## Goal
 
-Run one shared Google Analytics MCP service for Tuft while keeping each user's
-Google identity, grants, and Analytics data isolated. Users connect through the
-normal Tuft MCP OAuth flow and sign in to Google in the browser.
+Run one shared Google MCP service for Tuft while keeping each user's Google
+identity, product grants, and data isolated. Google Analytics and Gmail are
+separate MCP resources in one deployment and OAuth application.
 
 The upstream server is a local stdio process. It obtains one set of Google
 Application Default Credentials and caches it globally, so it cannot safely
@@ -13,16 +13,14 @@ serve multiple users unchanged.
 ## Request flow
 
 1. Tuft begins an MCP OAuth authorization request against this service.
-2. The service redirects the user to Google with the
-   `analytics.readonly` scope and a state value bound to the MCP authorization
-   transaction.
+2. The service resolves the requested MCP resource and redirects to Google with
+   only its scope: `analytics.readonly` for GA4 or `gmail.readonly` for Gmail.
 3. Google redirects back to this service. The service exchanges the code and
    stores the Google refresh token encrypted, associated with the MCP grant.
 4. The service finishes the MCP authorization flow and returns control to
    Tuft.
 5. For each MCP request, the service authenticates the Tuft access token,
-   resolves its grant, loads that grant's Google credentials, and constructs
-   Analytics API clients for that request.
+   verifies the grant belongs to that product, and loads its Google credentials.
 
 No Google access or refresh token is returned to Tuft or shared between users.
 
@@ -32,7 +30,7 @@ No Google access or refresh token is returned to Tuft or shared between users.
 - **MCP authorization server:** OAuth authorization-server metadata,
   authorization, token, and client-registration support required by Tuft.
 - **Google OAuth adapter:** Google authorization-code flow with offline access
-  and the `https://www.googleapis.com/auth/analytics.readonly` scope.
+  and a product-specific read-only scope.
 - **Grant store:** MCP clients, authorization codes, access/refresh tokens, and
   encrypted Google refresh tokens. Postgres is appropriate for the first
   deployment.
@@ -45,8 +43,8 @@ No Google access or refresh token is returned to Tuft or shared between users.
 
 ## Isolation requirements
 
-- Never select Google credentials from caller-controlled account or property
-  identifiers.
+- Never select Google credentials from caller-controlled identifiers or allow a
+  GA4 grant to authorize Gmail (or vice versa).
 - Bind every Google credential to an authenticated MCP grant and Tuft user.
 - Encrypt Google refresh tokens at rest and avoid logging authorization codes,
   access tokens, or refresh tokens.
@@ -85,7 +83,7 @@ Then run the container with:
 ```shell
 docker build -t ga4-mcp .
 docker run --rm -p 8000:8000 -v ga4-mcp-data:/data \
-  -e GA4_MCP_SERVER_URL=https://YOUR_HOST \
+  -e GOOGLE_MCP_SERVER_URL=https://YOUR_HOST \
   -e GOOGLE_OAUTH_CLIENT_ID=... \
   -e GOOGLE_OAUTH_CLIENT_SECRET=... \
   -e GA4_MCP_ENCRYPTION_KEY=... \
@@ -93,7 +91,9 @@ docker run --rm -p 8000:8000 -v ga4-mcp-data:/data \
   ga4-mcp
 ```
 
-The MCP URL is `https://YOUR_HOST/mcp`; health checks use `/health`.
+The MCP URLs are `https://YOUR_HOST/ga4/mcp` and
+`https://YOUR_HOST/gmail/mcp`; health checks use `/health`. `/mcp` remains a
+temporary GA4 compatibility alias.
 
 For a production-shaped Fly deployment backed by Managed Postgres, see
 [Deploy to Fly.io](fly.md).

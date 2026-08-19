@@ -8,10 +8,9 @@ import secrets
 import sqlite3
 import threading
 import time
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from html import escape
 from urllib.parse import urlencode
 
 import httpx
@@ -38,7 +37,7 @@ from psycopg_pool import ConnectionPool
 from psycopg.types.json import Jsonb
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.responses import JSONResponse, RedirectResponse
 
 from analytics_mcp.tools.admin.info import (
     get_account_summaries,
@@ -54,9 +53,23 @@ from analytics_mcp.tools.reporting.metadata import (
     get_custom_dimensions_and_metrics,
 )
 from analytics_mcp.tools.reporting.realtime import run_realtime_report
+from analytics_mcp.gmail import (
+    get_message,
+    get_thread,
+    list_threads,
+    search_messages,
+    set_credential_provider as set_gmail_credential_provider,
+)
 
 ANALYTICS_SCOPE = "https://www.googleapis.com/auth/analytics.readonly"
-MCP_SCOPE = "analytics.read"
+GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+GA4_MCP_SCOPE = "google.ga4.read"
+GMAIL_MCP_SCOPE = "google.gmail.read"
+LEGACY_GA4_MCP_SCOPE = "analytics.read"
+PRODUCTS = {
+    "ga4": (ANALYTICS_SCOPE, GA4_MCP_SCOPE),
+    "gmail": (GMAIL_SCOPE, GMAIL_MCP_SCOPE),
+}
 
 
 @dataclass(frozen=True)
@@ -73,7 +86,7 @@ class HostedSettings:
     @classmethod
     def from_env(cls) -> "HostedSettings":
         required = {
-            "server_url": "GA4_MCP_SERVER_URL",
+            "server_url": "GOOGLE_MCP_SERVER_URL",
             "google_client_id": "GOOGLE_OAUTH_CLIENT_ID",
             "google_client_secret": "GOOGLE_OAUTH_CLIENT_SECRET",
             "encryption_key": "GA4_MCP_ENCRYPTION_KEY",
@@ -82,6 +95,8 @@ class HostedSettings:
         missing = []
         for field, variable in required.items():
             value = os.environ.get(variable)
+            if field == "server_url" and not value:
+                value = os.environ.get("GA4_MCP_SERVER_URL")
             if value:
                 values[field] = value
             else:
@@ -231,6 +246,7 @@ class GoogleOAuthProvider(
         self, client: OAuthClientInformationFull, params: AuthorizationParams
     ) -> str:
         provider_state = secrets.token_urlsafe(32)
+        product = self.product_for_resource(str(params.resource or ""))
         self.store.put(
             "state",
             provider_state,
@@ -241,6 +257,8 @@ class GoogleOAuthProvider(
                 "redirect_uri_provided_explicitly": params.redirect_uri_provided_explicitly,
                 "code_challenge": params.code_challenge,
                 "resource": params.resource,
+                "product": product,
+                "scopes": params.scopes,
                 "expires_at": time.time() + 600,
             },
         )
@@ -253,18 +271,33 @@ class GoogleOAuthProvider(
         transaction = self.store.get("state", state)
         if not transaction or transaction["expires_at"] < time.time():
             raise HTTPException(400, "Invalid or expired OAuth request")
+        google_scope = PRODUCTS[transaction["product"]][0]
         query = urlencode(
             {
                 "client_id": self.settings.google_client_id,
                 "redirect_uri": f"{self.settings.server_url.rstrip('/')}/oauth/google/callback",
                 "response_type": "code",
-                "scope": ANALYTICS_SCOPE,
+                "scope": google_scope,
                 "access_type": "offline",
                 "prompt": "consent",
                 "state": state,
             }
         )
         return f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
+
+    def product_for_resource(self, resource: str) -> str:
+        if resource.endswith("/gmail/mcp"):
+            return "gmail"
+        if resource.endswith("/ga4/mcp") or resource.rstrip("/").endswith(
+            "ga4.mcp.tuft.dev/mcp"
+        ):
+            return "ga4"
+        if (
+            resource.rstrip("/")
+            == f"{self.settings.server_url.rstrip('/')}/mcp"
+        ):
+            return "ga4"
+        raise HTTPException(400, "Unknown Google MCP resource")
 
     async def handle_google_callback(self, request: Request):
         error = request.query_params.get("error")
@@ -306,6 +339,7 @@ class GoogleOAuthProvider(
             "grant",
             grant_id,
             {
+                "product": transaction["product"],
                 "refresh_token": self.store.encrypt(refresh_token),
                 "access_token": self.store.encrypt(
                     google_token["access_token"]
@@ -318,7 +352,8 @@ class GoogleOAuthProvider(
         authorization_code = AuthorizationCode(
             code=mcp_code,
             client_id=transaction["client_id"],
-            scopes=[MCP_SCOPE],
+            scopes=transaction.get("scopes")
+            or [PRODUCTS[transaction["product"]][1]],
             expires_at=time.time() + 300,
             code_challenge=transaction["code_challenge"],
             redirect_uri=AnyHttpUrl(transaction["redirect_uri"]),
@@ -326,11 +361,11 @@ class GoogleOAuthProvider(
                 "redirect_uri_provided_explicitly"
             ],
             resource=transaction["resource"],
-            subject=grant_id,
         )
         self.store.put(
             "code", mcp_code, authorization_code.model_dump(mode="json")
         )
+        self.store.put("code_grant", mcp_code, {"grant_id": grant_id})
         self.store.delete("state", state)
         redirect = construct_redirect_uri(
             transaction["redirect_uri"],
@@ -344,11 +379,13 @@ class GoogleOAuthProvider(
         return AuthorizationCode.model_validate(value) if value else None
 
     async def exchange_authorization_code(self, client, authorization_code):
+        binding = self.store.get("code_grant", authorization_code.code)
         self.store.delete("code", authorization_code.code)
+        self.store.delete("code_grant", authorization_code.code)
         return self._issue_tokens(
             client.client_id,
             authorization_code.scopes,
-            authorization_code.subject,
+            binding["grant_id"] if binding else None,
         )
 
     def _issue_tokens(
@@ -361,18 +398,21 @@ class GoogleOAuthProvider(
             client_id=client_id,
             scopes=scopes,
             expires_at=int(time.time()) + 3600,
-            subject=subject,
         )
         refresh = RefreshToken(
             token=refresh_value,
             client_id=client_id,
             scopes=scopes,
-            subject=subject,
         )
         self.store.put("access", access_value, access.model_dump(mode="json"))
         self.store.put(
             "refresh", refresh_value, refresh.model_dump(mode="json")
         )
+        if subject:
+            self.store.put("access_grant", access_value, {"grant_id": subject})
+            self.store.put(
+                "refresh_grant", refresh_value, {"grant_id": subject}
+            )
         return OAuthToken(
             access_token=access_value,
             refresh_token=refresh_value,
@@ -387,11 +427,13 @@ class GoogleOAuthProvider(
         return token if token and token.client_id == client.client_id else None
 
     async def exchange_refresh_token(self, client, refresh_token, scopes):
+        binding = self.store.get("refresh_grant", refresh_token.token)
         self.store.delete("refresh", refresh_token.token)
+        self.store.delete("refresh_grant", refresh_token.token)
         return self._issue_tokens(
             client.client_id,
             scopes or refresh_token.scopes,
-            refresh_token.subject,
+            binding["grant_id"] if binding else None,
         )
 
     async def load_access_token(self, token):
@@ -404,26 +446,37 @@ class GoogleOAuthProvider(
 
     async def revoke_token(self, token) -> None:
         kind = "access" if isinstance(token, AccessToken) else "refresh"
+        binding_kind = f"{kind}_grant"
+        binding = self.store.get(binding_kind, token.token)
         self.store.delete(kind, token.token)
-        if token.subject:
-            self.store.delete("grant", token.subject)
+        self.store.delete(binding_kind, token.token)
+        if binding:
+            self.store.delete("grant", binding["grant_id"])
 
-    def credentials_for_current_request(self) -> Credentials:
+    def credentials_for_current_request(
+        self, expected_product: str = "ga4"
+    ) -> Credentials:
         access = get_access_token()
-        if not access or not access.subject:
-            raise RuntimeError(
-                "Google Analytics tools require an authenticated grant"
-            )
-        grant = self.store.get("grant", access.subject)
+        if not access:
+            raise RuntimeError("Google tools require an authenticated grant")
+        binding = self.store.get("access_grant", access.token)
+        if not binding:
+            raise RuntimeError("Google access token has no grant binding")
+        grant = self.store.get("grant", binding["grant_id"])
         if not grant:
             raise RuntimeError("Google authorization has been revoked")
+        product = grant.get("product", "ga4")
+        if product != expected_product:
+            raise RuntimeError(
+                f"Google grant for {product} is not valid for {expected_product}"
+            )
         credentials = Credentials(
             token=self.store.decrypt(grant["access_token"]),
             refresh_token=self.store.decrypt(grant["refresh_token"]),
             token_uri="https://oauth2.googleapis.com/token",
             client_id=self.settings.google_client_id,
             client_secret=self.settings.google_client_secret,
-            scopes=[ANALYTICS_SCOPE],
+            scopes=[PRODUCTS[product][0]],
         )
         # google-auth compares expiry with a naive UTC datetime.
         credentials.expiry = datetime.fromtimestamp(
@@ -432,7 +485,32 @@ class GoogleOAuthProvider(
         return credentials
 
 
-def create_server(settings: HostedSettings) -> FastMCP:
+def _auth_settings(
+    settings: HostedSettings,
+    resource_url: str | None,
+    required_scopes: list[str],
+) -> AuthSettings:
+    valid_scopes = [
+        GA4_MCP_SCOPE,
+        GMAIL_MCP_SCOPE,
+        LEGACY_GA4_MCP_SCOPE,
+    ]
+    return AuthSettings(
+        issuer_url=AnyHttpUrl(settings.server_url),
+        resource_server_url=(
+            AnyHttpUrl(resource_url) if resource_url else None
+        ),
+        required_scopes=required_scopes,
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=valid_scopes,
+            default_scopes=[GA4_MCP_SCOPE],
+        ),
+        revocation_options=RevocationOptions(enabled=True),
+    )
+
+
+def create_server(settings: HostedSettings):
     store = (
         PostgresGrantStore(settings.database_url, settings.encryption_key)
         if settings.database_url
@@ -440,35 +518,51 @@ def create_server(settings: HostedSettings) -> FastMCP:
     )
     provider = GoogleOAuthProvider(settings, store)
 
-    @asynccontextmanager
-    async def lifespan(_server):
-        try:
-            yield
-        finally:
-            store.close()
-
-    server = FastMCP(
-        name="Google Analytics MCP Server",
+    auth_server = FastMCP(
+        name="Google MCP Authorization Server",
         auth_server_provider=provider,
-        auth=AuthSettings(
-            issuer_url=AnyHttpUrl(settings.server_url),
-            resource_server_url=None,
-            required_scopes=[MCP_SCOPE],
-            client_registration_options=ClientRegistrationOptions(
-                enabled=True,
-                valid_scopes=[MCP_SCOPE],
-                default_scopes=[MCP_SCOPE],
-            ),
-            revocation_options=RevocationOptions(enabled=True),
-        ),
+        auth=_auth_settings(settings, None, [GA4_MCP_SCOPE]),
         host=settings.host,
         port=settings.port,
+        streamable_http_path="/__auth_mcp_unused",
+        json_response=True,
+        stateless_http=True,
+    )
+
+    ga4_url = f"{settings.server_url.rstrip('/')}/ga4/mcp"
+    ga4_server = FastMCP(
+        name="Google Analytics MCP Server",
+        token_verifier=provider,
+        auth=_auth_settings(settings, ga4_url, [GA4_MCP_SCOPE]),
+        streamable_http_path="/ga4/mcp",
+        json_response=True,
+        stateless_http=True,
+    )
+    gmail_url = f"{settings.server_url.rstrip('/')}/gmail/mcp"
+    gmail_server = FastMCP(
+        name="Gmail MCP Server",
+        token_verifier=provider,
+        auth=_auth_settings(settings, gmail_url, [GMAIL_MCP_SCOPE]),
+        streamable_http_path="/gmail/mcp",
+        json_response=True,
+        stateless_http=True,
+    )
+    legacy_ga4_url = f"{settings.server_url.rstrip('/')}/mcp"
+    legacy_ga4_server = FastMCP(
+        name="Google Analytics MCP Server",
+        token_verifier=provider,
+        auth=_auth_settings(settings, legacy_ga4_url, [LEGACY_GA4_MCP_SCOPE]),
         streamable_http_path="/mcp",
         json_response=True,
         stateless_http=True,
-        lifespan=lifespan,
     )
-    set_credential_provider(provider.credentials_for_current_request)
+
+    set_credential_provider(
+        lambda: provider.credentials_for_current_request("ga4")
+    )
+    set_gmail_credential_provider(
+        lambda: provider.credentials_for_current_request("gmail")
+    )
 
     for tool in (
         get_account_summaries,
@@ -481,71 +575,88 @@ def create_server(settings: HostedSettings) -> FastMCP:
         run_funnel_report,
         run_conversions_report,
     ):
-        server.add_tool(tool)
+        ga4_server.add_tool(tool)
+        legacy_ga4_server.add_tool(tool)
 
-    @server.custom_route("/oauth/google/callback", methods=["GET"])
+    for tool in (search_messages, get_message, list_threads, get_thread):
+        gmail_server.add_tool(tool)
+
+    @auth_server.custom_route("/oauth/google/callback", methods=["GET"])
     async def google_callback(request: Request):
         return await provider.handle_google_callback(request)
 
-    @server.custom_route("/oauth/google/start", methods=["GET"])
+    @auth_server.custom_route("/oauth/google/start", methods=["GET"])
     async def google_start(request: Request):
         state = request.query_params.get("state")
         if not state:
             raise HTTPException(400, "Missing OAuth state")
-        continue_url = provider.google_authorization_url(state)
-        return HTMLResponse(f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Connect Google Analytics</title>
-  <style>
-    :root {{ color-scheme: light; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-    * {{ box-sizing: border-box; }}
-    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f9f9fb; color: #242429; font-size: 14px; }}
-    main {{ width: min(420px, 100%); padding: 18px; border: 1px solid #d9d9df; border-radius: 16px; background: #fff; box-shadow: 0 16px 38px rgba(26, 26, 32, .08); }}
-    header {{ display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }}
-    .mark {{ width: 38px; height: 38px; object-fit: contain; }}
-    h1 {{ margin: 0; font-size: 19px; line-height: 24px; font-weight: 650; letter-spacing: -.015em; }}
-    .badge {{ margin-left: 5px; padding: 2px 6px; border-radius: 999px; background: #f0eff2; color: #67666f; font-size: 10px; font-weight: 650; vertical-align: 2px; text-transform: uppercase; letter-spacing: .04em; }}
-    .explanation {{ margin: 0 0 18px; color: #4f4f58; line-height: 20px; }}
-    .explanation a {{ color: inherit; text-underline-offset: 2px; }}
-    ol {{ display: grid; gap: 13px; margin: 0; padding: 0; list-style: none; counter-reset: steps; }}
-    li {{ position: relative; min-height: 22px; padding: 1px 0 0 32px; color: #303037; line-height: 20px; counter-increment: steps; }}
-    li::before {{ content: counter(steps); position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: #f0f0f3; color: #777780; font-size: 11px; font-weight: 650; }}
-    .contact {{ margin: 15px 0 0; color: #4f4f58; line-height: 20px; text-align: left; }}
-    .contact a {{ color: inherit; text-underline-offset: 2px; }}
-    .button {{ display: block; margin-top: 18px; padding: 10px 16px; border-radius: 8px; background: #29292e; color: white; text-align: center; text-decoration: none; font-weight: 600; line-height: 20px; transition: background .15s ease, transform .15s ease; }}
-    .button:hover {{ background: #111114; }}
-    .button:active {{ transform: translateY(1px); }}
-  </style>
-</head>
-<body><main>
-  <header>
-    <img class="mark" src="https://custom-mcp-preview.staging.tuft.host/images/tuft-mark.png" alt="Tuft">
-    <h1>Connect Google Analytics <span class="badge">Alpha</span></h1>
-  </header>
-  <p class="explanation">Google is currently reviewing Tuft's Google Analytics integration. While we are in the approval process, using this feature requires a few extra steps. While Google displays a warning during this period, <strong>it has no impact on how we safeguard your credentials.</strong></p>
-  <ol>
-    <li>Continue to Google.</li>
-    <li>On the “Google hasn't verified this app” screen, select <strong>Advanced</strong>.</li>
-    <li>Select <strong>Go to Tuft (unsafe)</strong> to finish connecting.</li>
-  </ol>
-  <p class="contact">Contact Eliot (<a href="mailto:eliot@expo.dev">eliot@expo.dev</a>) with any questions.</p>
-  <a class="button" href="{escape(continue_url, quote=True)}">Continue to Google</a>
-</main></body></html>""")
+        return RedirectResponse(
+            provider.google_authorization_url(state), status_code=302
+        )
 
-    @server.custom_route("/health", methods=["GET"])
+    @auth_server.custom_route("/health", methods=["GET"])
     async def health(_request: Request):
         store.ping()
         return JSONResponse({"status": "ok"})
 
-    return server
+    auth_app = auth_server.streamable_http_app()
+    ga4_app = ga4_server.streamable_http_app()
+    gmail_app = gmail_server.streamable_http_app()
+    legacy_ga4_app = legacy_ga4_server.streamable_http_app()
+
+    routes = [
+        route
+        for route in auth_app.routes
+        if getattr(route, "path", None) != "/__auth_mcp_unused"
+    ]
+    routes.extend(ga4_app.routes)
+    routes.extend(gmail_app.routes)
+    routes.extend(legacy_ga4_app.routes)
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        try:
+            async with AsyncExitStack() as stack:
+                await stack.enter_async_context(
+                    auth_server.session_manager.run()
+                )
+                await stack.enter_async_context(
+                    ga4_server.session_manager.run()
+                )
+                await stack.enter_async_context(
+                    gmail_server.session_manager.run()
+                )
+                await stack.enter_async_context(
+                    legacy_ga4_server.session_manager.run()
+                )
+                yield
+        finally:
+            store.close()
+
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.middleware.authentication import AuthenticationMiddleware
+    from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
+    from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
+
+    return Starlette(
+        routes=routes,
+        middleware=[
+            Middleware(
+                AuthenticationMiddleware,
+                backend=BearerAuthBackend(provider),
+            ),
+            Middleware(AuthContextMiddleware),
+        ],
+        lifespan=lifespan,
+    )
 
 
 def run_server() -> None:
     settings = HostedSettings.from_env()
-    create_server(settings).run(transport="streamable-http")
+    import uvicorn
+
+    uvicorn.run(create_server(settings), host=settings.host, port=settings.port)
 
 
 if __name__ == "__main__":

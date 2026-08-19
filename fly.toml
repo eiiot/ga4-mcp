@@ -5,7 +5,7 @@ primary_region = "sjc"
   dockerfile = "Dockerfile"
 
 [env]
-  GA4_MCP_SERVER_URL = "https://ga4.mcp.tuft.dev"
+  GOOGLE_MCP_SERVER_URL = "https://google.mcp.tuft.dev"
   PORT = "8000"
 
 [http_service]

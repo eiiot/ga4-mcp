@@ -9,8 +9,8 @@ The checked-in configuration uses:
 
 - app: `tuft-ga4-mcp`
 - region: `sjc`
-- public URL: `https://ga4.mcp.tuft.dev`
-- Google callback: `https://ga4.mcp.tuft.dev/oauth/google/callback`
+- public URL: `https://google.mcp.tuft.dev`
+- Google callback: `https://google.mcp.tuft.dev/oauth/google/callback`
 
 If the Fly app name is unavailable, change `app` in `fly.toml`. The public URL
 remains the custom Tuft hostname.
@@ -37,8 +37,8 @@ app; all durable state belongs in Postgres.
 Add the custom hostname to Fly:
 
 ```shell
-fly certs add ga4.mcp.tuft.dev -a tuft-ga4-mcp
-fly certs setup ga4.mcp.tuft.dev -a tuft-ga4-mcp
+fly certs add google.mcp.tuft.dev -a tuft-ga4-mcp
+fly certs setup google.mcp.tuft.dev -a tuft-ga4-mcp
 ```
 
 The second command prints the exact DNS records. In the `tuft.dev` DNS zone,
@@ -48,7 +48,7 @@ Keep the CNAME DNS-only rather than proxying it through another CDN, then check
 issuance with:
 
 ```shell
-fly certs check ga4.mcp.tuft.dev -a tuft-ga4-mcp
+fly certs check google.mcp.tuft.dev -a tuft-ga4-mcp
 ```
 
 Add the fixed Google client ID, an encryption key, and the Google client secret
@@ -72,21 +72,22 @@ In Google Cloud, add this exact authorized redirect URI to the OAuth web
 client:
 
 ```text
-https://ga4.mcp.tuft.dev/oauth/google/callback
+https://google.mcp.tuft.dev/oauth/google/callback
 ```
 
 ## Deploy and verify
 
 ```shell
 fly deploy
-curl --fail https://ga4.mcp.tuft.dev/health
+curl --fail https://google.mcp.tuft.dev/health
 fly logs -a tuft-ga4-mcp
 ```
 
 The MCP endpoint is:
 
 ```text
-https://ga4.mcp.tuft.dev/mcp
+https://google.mcp.tuft.dev/ga4/mcp
+https://google.mcp.tuft.dev/gmail/mcp
 ```
 
 The application creates its small `records` table idempotently during startup.
